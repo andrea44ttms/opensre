@@ -79,72 +79,101 @@ class Graph:
             # Roll back
             self._edges[from_id].remove(to_id)
             self._reverse_edges[to_id].remove(from_id)
-            raise ValueError(f"Adding edge {from_id!r} -> {to_id!r} would create a cycle")
+            raise ValueError(
+                f"Adding edge '{from_id}' -> '{to_id}' would introduce a cycle in graph '{self.graph_id}'"
+            )
 
         logger.debug("Added edge %s -> %s in graph %s", from_id, to_id, self.graph_id)
         return self
 
     # ------------------------------------------------------------------
-    # Traversal helpers
+    # Cycle detection
     # ------------------------------------------------------------------
 
-    def topological_order(self) -> List[GraphNode]:
-        """Return nodes in a valid topological execution order (Kahn's algorithm)."""
+    def _has_cycle(self) -> bool:
+        """Return True if the graph currently contains a cycle (DFS-based)."""
+        visited: Set[str] = set()
+        # Nodes currently in the DFS recursion stack
+        rec_stack: Set[str] = set()
+
+        def dfs(node_id: str) -> bool:
+            visited.add(node_id)
+            rec_stack.add(node_id)
+            for neighbour in self._edges[node_id]:
+                if neighbour not in visited:
+                    if dfs(neighbour):
+                        return True
+                elif neighbour in rec_stack:
+                    return True
+            rec_stack.discard(node_id)
+            return False
+
+        for nid in self._nodes:
+            if nid not in visited:
+                if dfs(nid):
+                    return True
+        return False
+
+    # ------------------------------------------------------------------
+    # Topological sort
+    # ------------------------------------------------------------------
+
+    def topological_sort(self) -> List[str]:
+        """Return a list of node IDs in topological (execution) order.
+
+        Uses Kahn's algorithm (BFS-based).
+
+        Raises:
+            RuntimeError: If a cycle is detected (should not happen if add_edge
+                          is used correctly, but guards against direct mutation).
+        """
         in_degree: Dict[str, int] = {nid: 0 for nid in self._nodes}
         for nid in self._nodes:
             for downstream in self._edges[nid]:
                 in_degree[downstream] += 1
 
         queue: deque[str] = deque(nid for nid, deg in in_degree.items() if deg == 0)
-        order: List[GraphNode] = []
+        order: List[str] = []
 
         while queue:
-            current = queue.popleft()
-            order.append(self._nodes[current])
-            for downstream in self._edges[current]:
+            nid = queue.popleft()
+            order.append(nid)
+            for downstream in self._edges[nid]:
                 in_degree[downstream] -= 1
                 if in_degree[downstream] == 0:
                     queue.append(downstream)
 
         if len(order) != len(self._nodes):
-            raise RuntimeError("Graph contains a cycle; topological sort failed.")
+            raise RuntimeError(
+                f"Cycle detected during topological sort of graph '{self.graph_id}'. "
+                "This indicates direct mutation of internal edge structures."
+            )
 
         return order
 
+    # ------------------------------------------------------------------
+    # Convenience helpers
+    # ------------------------------------------------------------------
+
     def get_node(self, node_id: str) -> GraphNode:
-        """Retrieve a node by its ID."""
-        try:
-            return self._nodes[node_id]
-        except KeyError:
-            raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'") from None
+        """Retrieve a node by ID.
 
-    @property
-    def nodes(self) -> List[GraphNode]:
-        """All registered nodes (insertion order)."""
-        return list(self._nodes.values())
+        Raises:
+            KeyError: If the node is not found.
+        """
+        if node_id not in self._nodes:
+            raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'")
+        return self._nodes[node_id]
 
-    # ------------------------------------------------------------------
-    # Internal utilities
-    # ------------------------------------------------------------------
+    def node_count(self) -> int:
+        """Return the number of nodes in the graph."""
+        return len(self._nodes)
 
-    def _has_cycle(self) -> bool:
-        """DFS-based cycle detection."""
-        visited: Set[str] = set()
-        rec_stack: Set[str] = set()
-
-        def dfs(node: str) -> bool:
-            visited.add(node)
-            rec_stack.add(node)
-            for neighbour in self._edges[node]:
-                if neighbour not in visited:
-                    if dfs(neighbour):
-                        return True
-                elif neighbour in rec_stack:
-                    return True
-            rec_stack.discard(node)
-            return False
-
-        return any(dfs(n) for n in self._nodes if n not in visited)
+    def edge_count(self) -> int:
+        """Return the total number of directed edges in the graph."""
+        return sum(len(v) for v in self._edges.values())
 
     def __repr__(self) -> str:
-        return f"Graph(id={self.graph_id!r}, nodes={len(self._nodes)}, edges={sum(len(v) for v in self._edges.values())})"
+        return (
+            f"Graph(id={self.graph_id!r}, nodes={self.node_count()}, edges={self.edge_count()})"
+        )
