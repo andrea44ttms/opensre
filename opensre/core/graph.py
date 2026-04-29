@@ -93,18 +93,19 @@ class Graph:
     def _has_cycle(self) -> bool:
         """Return True if the graph currently contains a cycle (DFS-based)."""
         visited: Set[str] = set()
-        in_stack: Set[str] = set()
+        # Nodes currently on the DFS recursion stack
+        rec_stack: Set[str] = set()
 
         def dfs(node_id: str) -> bool:
             visited.add(node_id)
-            in_stack.add(node_id)
-            for neighbor in self._edges[node_id]:
-                if neighbor not in visited:
-                    if dfs(neighbor):
+            rec_stack.add(node_id)
+            for neighbour in self._edges[node_id]:
+                if neighbour not in visited:
+                    if dfs(neighbour):
                         return True
-                elif neighbor in in_stack:
+                elif neighbour in rec_stack:
                     return True
-            in_stack.discard(node_id)
+            rec_stack.discard(node_id)
             return False
 
         for nid in self._nodes:
@@ -118,10 +119,13 @@ class Graph:
     # ------------------------------------------------------------------
 
     def topological_sort(self) -> List[str]:
-        """Return node IDs in a valid topological execution order (Kahn's algorithm).
+        """Return a list of node IDs in topological (execution) order.
+
+        Uses Kahn's algorithm (BFS-based).
 
         Raises:
-            RuntimeError: If a cycle is detected (should not happen if add_edge is used).
+            RuntimeError: If a cycle is detected (should not happen if add_edge
+                          is used correctly, but acts as a safety net).
         """
         in_degree: Dict[str, int] = {nid: 0 for nid in self._nodes}
         for nid in self._nodes:
@@ -132,15 +136,18 @@ class Graph:
         order: List[str] = []
 
         while queue:
-            nid = queue.popleft()
-            order.append(nid)
-            for downstream in self._edges[nid]:
+            current = queue.popleft()
+            order.append(current)
+            for downstream in self._edges[current]:
                 in_degree[downstream] -= 1
                 if in_degree[downstream] == 0:
                     queue.append(downstream)
 
         if len(order) != len(self._nodes):
-            raise RuntimeError(f"Cycle detected in graph '{self.graph_id}' during topological sort")
+            raise RuntimeError(
+                f"Cycle detected in graph '{self.graph_id}' during topological sort — "
+                "this should not happen if add_edge cycle-checking is working correctly."
+            )
 
         return order
 
@@ -158,15 +165,17 @@ class Graph:
             raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'")
         return self._nodes[node_id]
 
+    @property
     def node_count(self) -> int:
-        """Return the number of nodes in the graph."""
+        """Number of nodes currently registered in the graph."""
         return len(self._nodes)
 
+    @property
     def edge_count(self) -> int:
-        """Return the total number of directed edges in the graph."""
-        return sum(len(neighbors) for neighbors in self._edges.values())
+        """Number of directed edges currently in the graph."""
+        return sum(len(v) for v in self._edges.values())
 
     def __repr__(self) -> str:
         return (
-            f"Graph(id={self.graph_id!r}, nodes={self.node_count()}, edges={self.edge_count()})"
+            f"Graph(id={self.graph_id!r}, nodes={self.node_count}, edges={self.edge_count})"
         )
