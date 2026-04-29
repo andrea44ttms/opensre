@@ -93,19 +93,18 @@ class Graph:
     def _has_cycle(self) -> bool:
         """Return True if the graph currently contains a cycle (DFS-based)."""
         visited: Set[str] = set()
-        # Nodes currently in the DFS recursion stack
-        rec_stack: Set[str] = set()
+        in_stack: Set[str] = set()
 
         def dfs(node_id: str) -> bool:
             visited.add(node_id)
-            rec_stack.add(node_id)
-            for neighbour in self._edges[node_id]:
-                if neighbour not in visited:
-                    if dfs(neighbour):
+            in_stack.add(node_id)
+            for neighbor in self._edges[node_id]:
+                if neighbor not in visited:
+                    if dfs(neighbor):
                         return True
-                elif neighbour in rec_stack:
+                elif neighbor in in_stack:
                     return True
-            rec_stack.discard(node_id)
+            in_stack.discard(node_id)
             return False
 
         for nid in self._nodes:
@@ -119,13 +118,10 @@ class Graph:
     # ------------------------------------------------------------------
 
     def topological_sort(self) -> List[str]:
-        """Return a list of node IDs in topological (execution) order.
-
-        Uses Kahn's algorithm (BFS-based).
+        """Return node IDs in a valid topological execution order (Kahn's algorithm).
 
         Raises:
-            RuntimeError: If a cycle is detected (should not happen if add_edge
-                          is used correctly, but guards against direct mutation).
+            RuntimeError: If a cycle is detected (should not happen if add_edge is used).
         """
         in_degree: Dict[str, int] = {nid: 0 for nid in self._nodes}
         for nid in self._nodes:
@@ -144,10 +140,7 @@ class Graph:
                     queue.append(downstream)
 
         if len(order) != len(self._nodes):
-            raise RuntimeError(
-                f"Cycle detected during topological sort of graph '{self.graph_id}'. "
-                "This indicates direct mutation of internal edge structures."
-            )
+            raise RuntimeError(f"Cycle detected in graph '{self.graph_id}' during topological sort")
 
         return order
 
@@ -159,7 +152,7 @@ class Graph:
         """Retrieve a node by ID.
 
         Raises:
-            KeyError: If the node is not found.
+            KeyError: If the node does not exist.
         """
         if node_id not in self._nodes:
             raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'")
@@ -171,7 +164,7 @@ class Graph:
 
     def edge_count(self) -> int:
         """Return the total number of directed edges in the graph."""
-        return sum(len(v) for v in self._edges.values())
+        return sum(len(neighbors) for neighbors in self._edges.values())
 
     def __repr__(self) -> str:
         return (
