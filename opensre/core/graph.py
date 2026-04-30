@@ -91,14 +91,14 @@ class Graph:
     # ------------------------------------------------------------------
 
     def _has_cycle(self) -> bool:
-        """Return True if the current edge set contains a cycle (DFS-based)."""
+        """Return True if the graph currently contains a cycle (DFS-based)."""
         visited: Set[str] = set()
         rec_stack: Set[str] = set()
 
         def dfs(node_id: str) -> bool:
             visited.add(node_id)
             rec_stack.add(node_id)
-            for neighbor in self._edges.get(node_id, []):
+            for neighbor in self._edges[node_id]:
                 if neighbor not in visited:
                     if dfs(neighbor):
                         return True
@@ -118,31 +118,37 @@ class Graph:
     # ------------------------------------------------------------------
 
     def topological_sort(self) -> List[str]:
-        """Return a list of node IDs in a valid topological execution order.
-
-        Uses Kahn's algorithm (BFS-based).
+        """Return node IDs in a valid topological execution order (Kahn's algorithm).
 
         Raises:
-            RuntimeError: If a cycle is detected (should not occur if add_edge is used correctly).
+            RuntimeError: If the graph contains a cycle (should not happen if
+                          add_edge cycle detection is working correctly).
         """
         in_degree: Dict[str, int] = {nid: 0 for nid in self._nodes}
         for nid in self._nodes:
-            for downstream in self._edges.get(nid, []):
+            for downstream in self._edges[nid]:
                 in_degree[downstream] += 1
 
         queue: deque[str] = deque(nid for nid, deg in in_degree.items() if deg == 0)
         order: List[str] = []
 
         while queue:
-            current = queue.popleft()
+            # Sort the queue entries to produce a deterministic order among
+            # nodes that have the same in-degree at any given step.
+            # This makes workflow execution order predictable in tests/logs.
+            current = min(queue)  # deterministic tie-breaking by node_id
+            queue.remove(current)
             order.append(current)
-            for downstream in self._edges.get(current, []):
+            for downstream in self._edges[current]:
                 in_degree[downstream] -= 1
                 if in_degree[downstream] == 0:
                     queue.append(downstream)
 
         if len(order) != len(self._nodes):
-            raise RuntimeError(f"Cycle detected in graph '{self.graph_id}' during topological sort")
+            raise RuntimeError(
+                f"Cycle detected during topological sort of graph '{self.graph_id}'. "
+                "This should not happen if add_edge cycle detection is functioning correctly."
+            )
 
         return order
 
@@ -154,21 +160,22 @@ class Graph:
         """Retrieve a node by ID.
 
         Raises:
-            KeyError: If the node is not found.
+            KeyError: If no node with the given ID exists.
         """
-        if node_id not in self._nodes:
+        try:
+            return self._nodes[node_id]
+        except KeyError:
             raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'")
-        return self._nodes[node_id]
 
-    @property
-    def nodes(self) -> Dict[str, GraphNode]:
-        """Read-only view of all nodes keyed by node_id."""
-        return dict(self._nodes)
+    def node_count(self) -> int:
+        """Return the number of nodes in the graph."""
+        return len(self._nodes)
 
-    @property
-    def edges(self) -> Dict[str, List[str]]:
-        """Read-only view of the adjacency list (downstream edges)."""
-        return {k: list(v) for k, v in self._edges.items()}
+    def edge_count(self) -> int:
+        """Return the total number of directed edges in the graph."""
+        return sum(len(neighbors) for neighbors in self._edges.values())
 
     def __repr__(self) -> str:
-        return f"Graph(id={self.graph_id!r}, nodes={len(self._nodes)}, edges={sum(len(v) for v in self._edges.values())})"
+        return (
+            f"Graph(id={self.graph_id!r}, nodes={self.node_count()}, edges={self.edge_count()})"
+        )
