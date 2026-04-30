@@ -91,38 +91,40 @@ class Graph:
     # ------------------------------------------------------------------
 
     def _has_cycle(self) -> bool:
-        """Return True if the current edge set contains a cycle (DFS-based)."""
+        """Return True if the graph currently contains a cycle (DFS-based)."""
         visited: Set[str] = set()
-        in_stack: Set[str] = set()
+        # Nodes currently in the DFS recursion stack
+        rec_stack: Set[str] = set()
 
         def dfs(node_id: str) -> bool:
             visited.add(node_id)
-            in_stack.add(node_id)
+            rec_stack.add(node_id)
             for neighbour in self._edges.get(node_id, []):
                 if neighbour not in visited:
                     if dfs(neighbour):
                         return True
-                elif neighbour in in_stack:
+                elif neighbour in rec_stack:
                     return True
-            in_stack.discard(node_id)
+            rec_stack.discard(node_id)
             return False
 
-        for nid in list(self._nodes):
+        for nid in self._nodes:
             if nid not in visited:
                 if dfs(nid):
                     return True
         return False
 
     # ------------------------------------------------------------------
-    # Traversal
+    # Topological sort
     # ------------------------------------------------------------------
 
     def topological_sort(self) -> List[str]:
-        """Return node IDs in a valid topological execution order.
+        """Return node IDs in a valid topological execution order (Kahn's algorithm).
 
         Raises:
             RuntimeError: If the graph contains a cycle (should not happen if
-                add_edge is used correctly, but guards against direct mutation).
+            add_edge cycle-checks are always used, but guards against direct
+            manipulation of internal state).
         """
         in_degree: Dict[str, int] = {nid: 0 for nid in self._nodes}
         for nid in self._nodes:
@@ -133,8 +135,11 @@ class Graph:
         order: List[str] = []
 
         while queue:
-            # Process nodes in insertion order for deterministic output
-            current = queue.popleft()
+            # Sort the zero-in-degree nodes before processing to give a
+            # deterministic ordering when multiple nodes are ready at once.
+            # This makes test output and logs easier to follow.
+            current = sorted(queue)[0]
+            queue.remove(current)
             order.append(current)
             for downstream in self._edges.get(current, []):
                 in_degree[downstream] -= 1
@@ -143,7 +148,7 @@ class Graph:
 
         if len(order) != len(self._nodes):
             raise RuntimeError(
-                f"Cycle detected during topological sort of graph '{self.graph_id}'"
+                f"Graph '{self.graph_id}' contains a cycle; topological sort is not possible."
             )
         return order
 
@@ -152,22 +157,25 @@ class Graph:
     # ------------------------------------------------------------------
 
     def get_node(self, node_id: str) -> GraphNode:
-        """Retrieve a node by ID. Raises KeyError if not found."""
-        if node_id not in self._nodes:
-            raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'")
-        return self._nodes[node_id]
+        """Retrieve a node by ID.
 
-    @property
+        Raises:
+            KeyError: If the node does not exist.
+        """
+        try:
+            return self._nodes[node_id]
+        except KeyError:
+            raise KeyError(f"Node '{node_id}' not found in graph '{self.graph_id}'")
+
     def node_count(self) -> int:
-        """Number of nodes currently registered in the graph."""
+        """Return the number of nodes currently in the graph."""
         return len(self._nodes)
 
-    @property
     def edge_count(self) -> int:
-        """Number of directed edges currently in the graph."""
+        """Return the total number of directed edges in the graph."""
         return sum(len(v) for v in self._edges.values())
 
     def __repr__(self) -> str:
         return (
-            f"Graph(id={self.graph_id!r}, nodes={self.node_count}, edges={self.edge_count})"
+            f"Graph(id={self.graph_id!r}, nodes={self.node_count()}, edges={self.edge_count()})"
         )
